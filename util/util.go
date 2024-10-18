@@ -44,7 +44,7 @@ func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{
 		panic(err)
 	}
 
-	log.Println("Handshake sent: ", string(payload))
+	fmt.Println("Handshake sent: ", string(payload))
 
 	buf := make([]byte, 102400)
 	n, err := conn.Read(buf)
@@ -52,7 +52,7 @@ func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{
 		panic(err)
 	}
 
-	fmt.Println("Received: ", string(buf[:n]))
+	// fmt.Println("Received: ", string(buf[:n]))
 
 	payload = []byte("\x00\x00\x00\x01\x02")
 	_, err = conn.Write(payload)

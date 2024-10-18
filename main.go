@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"html/template"
+	"log"
 	"net/http"
 	"sync/atomic"
-	"github.com/gin-gonic/gin"
+
 	"fake_dowloader/util"
 )
 
@@ -13,36 +16,65 @@ var (
 )
 
 func main() {
-	r := gin.Default()
-	r.LoadHTMLGlob("templates/*")
+	// 解析模板
+	tmpl, err := template.ParseFiles("templates/index.html")
+	if err != nil {
+		log.Fatalf("Failed to parse template: %v", err)
+	}
 
-	r.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
-	})
-
-	r.POST("/start", func(c *gin.Context) {
-		peerAddr := c.PostForm("peerAddr")
-		infoHash := c.PostForm("infoHash")
-		stopChan = make(chan struct{})
-
-		go func() {
-			util.ConnectPeerWithStop(peerAddr, infoHash, stopChan, &currentSpeed)
-		}()
-
-		c.String(http.StatusOK, "Started")
-	})
-
-	r.POST("/stop", func(c *gin.Context) {
-		if stopChan != nil {
-			close(stopChan)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			err := tmpl.Execute(w, nil)
+			if err != nil {
+				http.Error(w, "Failed to render template", http.StatusInternalServerError)
+			}
 		}
-		c.String(http.StatusOK, "Stopped")
 	})
 
-	r.GET("/speed", func(c *gin.Context) {
-		speed := atomic.LoadInt64(&currentSpeed)
-		c.JSON(http.StatusOK, gin.H{"speed": speed})
+	http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			peerAddr := r.FormValue("peerAddr")
+			infoHash := r.FormValue("infoHash")
+			stopChan = make(chan struct{})
+
+			go func() {
+				util.ConnectPeerWithStop(peerAddr, infoHash, stopChan, &currentSpeed)
+			}()
+
+			w.Write([]byte("Started"))
+		} else {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		}
 	})
 
-	r.Run(":8084")
+	http.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			if stopChan != nil {
+				close(stopChan)
+			}
+			w.Write([]byte("Stopped"))
+		} else {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		}
+	})
+
+	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			speed := atomic.LoadInt64(&currentSpeed)
+			response := map[string]int64{"speed": speed}
+			jsonResponse, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, "Failed to create JSON response", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(jsonResponse)
+		} else {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		}
+	})
+
+	log.Println("start to listen port...")
+
+	log.Fatal(http.ListenAndServe(":8084", nil))
 }
