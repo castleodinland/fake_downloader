@@ -1,4 +1,4 @@
-module dummy_pt
+module fake_dowloader
 
 go 1.18
 

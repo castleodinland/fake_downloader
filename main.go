@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"github.com/gin-gonic/gin"
-	"dummy_pt/util"
+	"fake_dowloader/util"
 )
 
 var (
