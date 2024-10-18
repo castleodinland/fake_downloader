@@ -25,6 +25,10 @@
                   console.log(data);
                   toggleButtons(false);
                   startMonitoring();
+                  // 保存状态到本地存储
+                  localStorage.setItem('isStarted', 'true');
+                  localStorage.setItem('peerAddr', peerAddr);
+                  localStorage.setItem('infoHash', infoHash);
               });
         }
 
@@ -36,6 +40,8 @@
                   console.log(data);
                   toggleButtons(true);
                   stopMonitoring();
+                  // 保存状态到本地存储
+                  localStorage.setItem('isStarted', 'false');
               });
         }
 
@@ -45,19 +51,36 @@
 
         function stopMonitoring() {
             clearInterval(intervalId);
-            document.getElementById("speedDisplay").innerText = "Speed: 0 KB/s";
+            document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s";
+            localStorage.setItem('speedDisplay', "Speed: 0 MB/s");
         }
 
         function fetchSpeed() {
             fetch('/speed')
               .then(response => response.json())
               .then(data => {
-                  document.getElementById("speedDisplay").innerText = "Speed: " + data.speed + " MB/s";
+                  const speedText = "Speed: " + data.speed.toFixed(2) + " MB/s";
+                  document.getElementById("speedDisplay").innerText = speedText;
+                  localStorage.setItem('speedDisplay', speedText);
               });
         }
 
         window.onload = function() {
-            toggleButtons(true);
+            const isStarted = localStorage.getItem('isStarted') === 'true';
+            toggleButtons(!isStarted);
+
+            // 恢复输入框值
+            if (isStarted) {
+                document.getElementById("peerAddr").value = localStorage.getItem('peerAddr') || '';
+                document.getElementById("infoHash").value = localStorage.getItem('infoHash') || '';
+                startMonitoring();
+            } else {
+                stopMonitoring();
+            }
+
+            // 恢复速度显示
+            const savedSpeed = localStorage.getItem('speedDisplay') || "Speed: 0 MB/s";
+            document.getElementById("speedDisplay").innerText = savedSpeed;
         }
     </script>
 </head>
@@ -69,6 +92,6 @@
     <button id="startButton" onclick="start()">Start</button>
     <button id="stopButton" onclick="stop()">Stop</button>
     <br><br>
-    <div id="speedDisplay">Speed: 0 KB/s</div>
+    <div id="speedDisplay">Speed: 0 MB/s</div>
 </body>
 </html>
