@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Start/Stop Example</title>
+    <script>
+        function toggleButtons(startEnabled) {
+            document.getElementById("startButton").disabled = !startEnabled;
+            document.getElementById("stopButton").disabled = startEnabled;
+        }
+
+        function start() {
+            var peerAddr = document.getElementById("peerAddr").value;
+            var infoHash = document.getElementById("infoHash").value;
+
+            fetch('/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'peerAddr=' + encodeURIComponent(peerAddr) + '&infoHash=' + encodeURIComponent(infoHash)
+            }).then(response => response.text())
+              .then(data => {
+                  console.log(data);
+                  toggleButtons(false);
+              });
+        }
+
+        function stop() {
+            fetch('/stop', {
+                method: 'POST'
+            }).then(response => response.text())
+              .then(data => {
+                  console.log(data);
+                  toggleButtons(true);
+              });
+        }
+
+        window.onload = function() {
+            toggleButtons(true);
+        }
+    </script>
+</head>
+<body>
+    <h1>Start/Stop Example</h1>
+    <input type="text" id="peerAddr" placeholder="Peer Address">
+    <input type="text" id="infoHash" placeholder="Info Hash">
+    <br><br>
+    <button id="startButton" onclick="start()">Start</button>
+    <button id="stopButton" onclick="stop()">Stop</button>
+</body>
+</html>
