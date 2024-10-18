@@ -2,8 +2,21 @@
 <html>
 <head>
     <title>Fake Downloader For PT</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        #infoHash {
+            width: 300px;
+        }
+        /* 设置图表容器的高度为页面高度的特定百分比 */
+        #chartContainer {
+            width: 100%;
+            height: 50vh; /* 视口高度的50% */
+        }
+    </style>
     <script>
         let intervalId;
+        let speedData = [];
+        let chart;
 
         function toggleButtons(startEnabled) {
             document.getElementById("startButton").disabled = !startEnabled;
@@ -42,6 +55,12 @@
                   stopMonitoring();
                   // 保存状态到本地存储
                   localStorage.setItem('isStarted', 'false');
+
+                  // 清空统计数据
+                  speedData = [];
+                  chart.data.labels = [];
+                  chart.data.datasets[0].data = speedData;
+                  chart.update();
               });
         }
 
@@ -51,7 +70,6 @@
 
         function stopMonitoring() {
             clearInterval(intervalId);
-            document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s";
             localStorage.setItem('speedDisplay', "Speed: 0 MB/s");
         }
 
@@ -64,7 +82,23 @@
                     const speedText = "Speed: " + speedInMBps + " MB/s";
                     document.getElementById("speedDisplay").innerText = speedText;
                     localStorage.setItem('speedDisplay', speedText);
+
+                    // 更新图表数据
+                    updateChart(speedInMBps);
                 });
+        }
+
+        function updateChart(speed) {
+            speedData.push(speed);
+            chart.data.labels.push(''); // 添加空标签
+            chart.update();
+        }
+
+        function resizeChart() {
+            const chartContainer = document.getElementById('chartContainer');
+            if (chart) {
+                chart.resize();
+            }
         }
 
         window.onload = function() {
@@ -83,6 +117,37 @@
             // 恢复速度显示
             const savedSpeed = localStorage.getItem('speedDisplay') || "Speed: 0 MB/s";
             document.getElementById("speedDisplay").innerText = savedSpeed;
+
+            // 初始化图表
+            const ctx = document.getElementById('myChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [], // 初始空标签
+                    datasets: [{
+                        label: 'Download Speed (MB/s)',
+                        data: speedData,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // 不保持纵横比
+                    scales: {
+                        x: {
+                            display: true // 显示X轴标签
+                        },
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // 窗口大小变化时调整图表大小
+            window.addEventListener('resize', resizeChart);
         }
     </script>
 </head>
@@ -95,5 +160,8 @@
     <button id="stopButton" onclick="stop()">Stop</button>
     <br><br>
     <div id="speedDisplay">Speed: 0 MB/s</div>
+    <div id="chartContainer">
+        <canvas id="myChart"></canvas>
+    </div>
 </body>
 </html>
