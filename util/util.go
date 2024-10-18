@@ -75,7 +75,7 @@ func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{
 		case <-ticker.C:
 			currentDownloaded := atomic.LoadInt64(&downloadedBytes)
 			atomic.StoreInt64(&downloadedBytes, 0)
-			currentSpeed := currentDownloaded / 1024 / 1024  // 转换为 MB/s
+			currentSpeed := currentDownloaded / 1024  // 转换为 MB/s
 			atomic.StoreInt64(speed, currentSpeed)
 
 		default:

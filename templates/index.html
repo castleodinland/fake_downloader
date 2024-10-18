@@ -57,12 +57,14 @@
 
         function fetchSpeed() {
             fetch('/speed')
-              .then(response => response.json())
-              .then(data => {
-                  const speedText = "Speed: " + data.speed.toFixed(2) + " MB/s";
-                  document.getElementById("speedDisplay").innerText = speedText;
-                  localStorage.setItem('speedDisplay', speedText);
-              });
+                .then(response => response.json())
+                .then(data => {
+                    // 将 data.speed 除以 1024，并保留两位小数
+                    const speedInMBps = (data.speed / 1024).toFixed(2);
+                    const speedText = "Speed: " + speedInMBps + " MB/s";
+                    document.getElementById("speedDisplay").innerText = speedText;
+                    localStorage.setItem('speedDisplay', speedText);
+                });
         }
 
         window.onload = function() {
@@ -85,7 +87,7 @@
     </script>
 </head>
 <body>
-    <h1>Start/Stop Example</h1>
+    <h1>Fake Downloader For PT</h1>
     <input type="text" id="peerAddr" placeholder="Peer Address">
     <input type="text" id="infoHash" placeholder="Info Hash">
     <br><br>
