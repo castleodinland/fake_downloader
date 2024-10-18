@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Start/Stop Example</title>
+    <title>Fake Downloader For PT</title>
     <script>
+        let intervalId;
+
         function toggleButtons(startEnabled) {
             document.getElementById("startButton").disabled = !startEnabled;
             document.getElementById("stopButton").disabled = startEnabled;
@@ -22,6 +24,7 @@
               .then(data => {
                   console.log(data);
                   toggleButtons(false);
+                  startMonitoring();
               });
         }
 
@@ -32,6 +35,24 @@
               .then(data => {
                   console.log(data);
                   toggleButtons(true);
+                  stopMonitoring();
+              });
+        }
+
+        function startMonitoring() {
+            intervalId = setInterval(fetchSpeed, 1000);
+        }
+
+        function stopMonitoring() {
+            clearInterval(intervalId);
+            document.getElementById("speedDisplay").innerText = "Speed: 0 KB/s";
+        }
+
+        function fetchSpeed() {
+            fetch('/speed')
+              .then(response => response.json())
+              .then(data => {
+                  document.getElementById("speedDisplay").innerText = "Speed: " + data.speed + " MB/s";
               });
         }
 
@@ -47,5 +68,7 @@
     <br><br>
     <button id="startButton" onclick="start()">Start</button>
     <button id="stopButton" onclick="stop()">Stop</button>
+    <br><br>
+    <div id="speedDisplay">Speed: 0 KB/s</div>
 </body>
 </html>

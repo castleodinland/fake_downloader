@@ -2,11 +2,15 @@ package main
 
 import (
 	"net/http"
+	"sync/atomic"
 	"github.com/gin-gonic/gin"
 	"dummy_pt/util"
 )
 
-var stopChan chan struct{}
+var (
+	stopChan     chan struct{}
+	currentSpeed int64
+)
 
 func main() {
 	r := gin.Default()
@@ -22,7 +26,7 @@ func main() {
 		stopChan = make(chan struct{})
 
 		go func() {
-			util.ConnectPeerWithStop(peerAddr, infoHash, stopChan)
+			util.ConnectPeerWithStop(peerAddr, infoHash, stopChan, &currentSpeed)
 		}()
 
 		c.String(http.StatusOK, "Started")
@@ -33,6 +37,11 @@ func main() {
 			close(stopChan)
 		}
 		c.String(http.StatusOK, "Stopped")
+	})
+
+	r.GET("/speed", func(c *gin.Context) {
+		speed := atomic.LoadInt64(&currentSpeed)
+		c.JSON(http.StatusOK, gin.H{"speed": speed})
 	})
 
 	r.Run(":8084")

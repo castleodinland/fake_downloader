@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync/atomic"
+	"time"
 )
 
 func RandomPeerId() string {
@@ -23,7 +25,8 @@ func RandomPeerId() string {
 }
 
 // Connect to a peer and spam request piece messages with stop functionality
-func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{}) {
+
+func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{}, speed *int64) {
 	conn, err := net.Dial("tcp", peerAddr)
 	if err != nil {
 		panic(err)
@@ -58,18 +61,30 @@ func ConnectPeerWithStop(peerAddr string, infoHash string, stopChan chan struct{
 	}
 
 	count := 0
+	var downloadedBytes int64
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-stopChan:
 			log.Println("Stopping...")
 			return
+
+		case <-ticker.C:
+			currentDownloaded := atomic.LoadInt64(&downloadedBytes)
+			atomic.StoreInt64(&downloadedBytes, 0)
+			currentSpeed := currentDownloaded / 1024 / 1024  // 转换为 MB/s
+			atomic.StoreInt64(speed, currentSpeed)
+
 		default:
 			payload = []byte("\x00\x00\x00\x0d" + "\x06" + "\x00\x00\x00\x00" + "\x00\x00\x00\x00" + "\x00\x00\x40\x00")
 			n, err = conn.Write(payload)
 			// log.Println("Write: ", n, err)
 
 			n, err = conn.Read(buf)
+			atomic.AddInt64(&downloadedBytes, int64(n))
 			// log.Println("Read: ", n, err)
 
 			count += 1
