@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"html/template"
 	"log"
 	"net/http"
@@ -16,6 +17,11 @@ var (
 )
 
 func main() {
+	// 解析命令行参数
+	var port string
+	flag.StringVar(&port, "port", "8084", "Port to listen on")
+	flag.Parse()
+
 	// 解析模板
 	tmpl, err := template.ParseFiles("templates/index.html")
 	if err != nil {
@@ -74,7 +80,8 @@ func main() {
 		}
 	})
 
-	log.Println("start to listen port...")
+	// 打印用户输入的端口号
+	log.Printf("start to listen port: %s...", port)
 
-	log.Fatal(http.ListenAndServe(":8084", nil))
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
