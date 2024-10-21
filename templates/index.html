@@ -64,6 +64,28 @@
               });
         }
 
+        function reannounce() {
+            // 禁用按钮
+            var button = document.getElementById("reannounceButton");
+            button.disabled = true;
+
+            fetch('/reannounce', {
+                method: 'POST'
+            }).then(response => response.text())
+              .then(data => {
+                  console.log(data);
+                  // 在这里可以显示一些提示信息给用户，比如 alert 或者更新某个 DOM 元素
+                  alert("Re-announce completed");
+              })
+              .catch(error => {
+                  console.error('Error:', error);
+              })
+              .finally(() => {
+                  // 请求完成后启用按钮
+                  button.disabled = false;
+              });
+        }
+
         function startMonitoring() {
             intervalId = setInterval(fetchSpeed, 1000);
         }
@@ -158,6 +180,7 @@
     <br><br>
     <button id="startButton" onclick="start()">Start</button>
     <button id="stopButton" onclick="stop()">Stop</button>
+    <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
     <br><br>
     <div id="speedDisplay">Speed: 0 MB/s</div>
     <div id="chartContainer">
