@@ -12,6 +12,10 @@
             width: 100%;
             height: 50vh; /* 视口高度的50% */
         }
+        /* 为按钮添加样式 */
+        button {
+            margin-right: 1em; /* 添加右边距 */
+        }
     </style>
     <script>
         let intervalId;
@@ -180,7 +184,7 @@
     <br><br>
     <button id="startButton" onclick="start()">Start</button>
     <button id="stopButton" onclick="stop()">Stop</button>
-    <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
+    <button id="reannounceButton" onclick="reannounce()" style="margin-left: 2em;">Re-announce</button>
     <br><br>
     <div id="speedDisplay">Speed: 0 MB/s</div>
     <div id="chartContainer">
