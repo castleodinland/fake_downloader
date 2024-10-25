@@ -4,17 +4,60 @@
     <title>Fake Downloader For PT</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        #infoHash {
-            width: 300px;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
         }
-        /* 设置图表容器的高度为页面高度的特定百分比 */
+        .input-group, .button-group, #speedDisplay {
+            display: flex;
+            margin-bottom: 15px;
+            justify-content: flex-start; /* 左对齐 */
+        }
+        #infoHash, #peerAddr {
+            width: 300px;
+            padding: 10px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button#startButton {
+            background-color: #4CAF50;
+            color: white;
+        }
+        button#stopButton {
+            background-color: #f44336;
+            color: white;
+        }
+        button#reannounceButton {
+            background-color: #008CBA;
+            color: white;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
         #chartContainer {
             width: 100%;
-            height: 50vh; /* 视口高度的50% */
+            height: 60vh;
+            margin-top: 20px;
         }
-        /* 为按钮添加样式 */
-        button {
-            margin-right: 1em; /* 添加右边距 */
+        #speedDisplay {
+            font-size: 18px;
+            font-weight: bold;
         }
     </style>
     <script>
@@ -42,7 +85,6 @@
                   console.log(data);
                   toggleButtons(false);
                   startMonitoring();
-                  // 保存状态到本地存储
                   localStorage.setItem('isStarted', 'true');
                   localStorage.setItem('peerAddr', peerAddr);
                   localStorage.setItem('infoHash', infoHash);
@@ -57,10 +99,8 @@
                   console.log(data);
                   toggleButtons(true);
                   stopMonitoring();
-                  // 保存状态到本地存储
                   localStorage.setItem('isStarted', 'false');
 
-                  // 清空统计数据
                   speedData = [];
                   chart.data.labels = [];
                   chart.data.datasets[0].data = speedData;
@@ -69,7 +109,6 @@
         }
 
         function reannounce() {
-            // 禁用按钮
             var button = document.getElementById("reannounceButton");
             button.disabled = true;
 
@@ -78,14 +117,12 @@
             }).then(response => response.text())
               .then(data => {
                   console.log(data);
-                  // 在这里可以显示一些提示信息给用户，比如 alert 或者更新某个 DOM 元素
                   alert("Re-announce completed");
               })
               .catch(error => {
                   console.error('Error:', error);
               })
               .finally(() => {
-                  // 请求完成后启用按钮
                   button.disabled = false;
               });
         }
@@ -103,20 +140,17 @@
             fetch('/speed')
                 .then(response => response.json())
                 .then(data => {
-                    // 将 data.speed 除以 1024，并保留两位小数
                     const speedInMBps = (data.speed / 1024).toFixed(2);
                     const speedText = "Speed: " + speedInMBps + " MB/s";
                     document.getElementById("speedDisplay").innerText = speedText;
                     localStorage.setItem('speedDisplay', speedText);
-
-                    // 更新图表数据
                     updateChart(speedInMBps);
                 });
         }
 
         function updateChart(speed) {
             speedData.push(speed);
-            chart.data.labels.push(''); // 添加空标签
+            chart.data.labels.push('');
             chart.update();
         }
 
@@ -131,7 +165,6 @@
             const isStarted = localStorage.getItem('isStarted') === 'true';
             toggleButtons(!isStarted);
 
-            // 恢复输入框值
             if (isStarted) {
                 document.getElementById("peerAddr").value = localStorage.getItem('peerAddr') || '';
                 document.getElementById("infoHash").value = localStorage.getItem('infoHash') || '';
@@ -140,16 +173,14 @@
                 stopMonitoring();
             }
 
-            // 恢复速度显示
             const savedSpeed = localStorage.getItem('speedDisplay') || "Speed: 0 MB/s";
             document.getElementById("speedDisplay").innerText = savedSpeed;
 
-            // 初始化图表
             const ctx = document.getElementById('myChart').getContext('2d');
             chart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: [], // 初始空标签
+                    labels: [],
                     datasets: [{
                         label: 'Download Speed (MB/s)',
                         data: speedData,
@@ -160,10 +191,10 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false, // 不保持纵横比
+                    maintainAspectRatio: false,
                     scales: {
                         x: {
-                            display: true // 显示X轴标签
+                            display: true
                         },
                         y: {
                             beginAtZero: true
@@ -172,20 +203,21 @@
                 }
             });
 
-            // 窗口大小变化时调整图表大小
             window.addEventListener('resize', resizeChart);
         }
     </script>
 </head>
 <body>
     <h1>Fake Downloader For PT</h1>
-    <input type="text" id="peerAddr" placeholder="Peer Address">
-    <input type="text" id="infoHash" placeholder="Info Hash">
-    <br><br>
-    <button id="startButton" onclick="start()">Start</button>
-    <button id="stopButton" onclick="stop()">Stop</button>
-    <button id="reannounceButton" onclick="reannounce()" style="margin-left: 2em;">Re-announce</button>
-    <br><br>
+    <div class="input-group">
+        <input type="text" id="peerAddr" placeholder="Peer Address">
+        <input type="text" id="infoHash" placeholder="Info Hash">
+    </div>
+    <div class="button-group">
+        <button id="startButton" onclick="start()">Start</button>
+        <button id="stopButton" onclick="stop()" disabled>Stop</button>
+        <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
+    </div>
     <div id="speedDisplay">Speed: 0 MB/s</div>
     <div id="chartContainer">
         <canvas id="myChart"></canvas>
