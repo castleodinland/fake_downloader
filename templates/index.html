@@ -8,10 +8,10 @@
             font-family: Arial, sans-serif;
             margin: 20px;
         }
-        .input-group, .button-group, #speedDisplay {
+        .input-group, .button-group, .statsDisplay {
             display: flex;
             margin-bottom: 15px;
-            justify-content: flex-start; /* 左对齐 */
+            justify-content: flex-start;
         }
         #infoHash, #peerAddr {
             width: 300px;
@@ -55,15 +55,19 @@
             height: 60vh;
             margin-top: 20px;
         }
-        #speedDisplay {
+        .statsDisplay {
             font-size: 18px;
             font-weight: bold;
+        }
+        #totalDataDisplay {
+            margin-left: 20px;
         }
     </style>
     <script>
         let intervalId;
         let speedData = [];
         let chart;
+        let totalData = 0;
 
         function toggleButtons(startEnabled) {
             document.getElementById("startButton").disabled = !startEnabled;
@@ -88,6 +92,8 @@
                   localStorage.setItem('isStarted', 'true');
                   localStorage.setItem('peerAddr', peerAddr);
                   localStorage.setItem('infoHash', infoHash);
+                  totalData = 0;
+                  updateTotalDataDisplay();
               });
         }
 
@@ -145,6 +151,7 @@
                     document.getElementById("speedDisplay").innerText = speedText;
                     localStorage.setItem('speedDisplay', speedText);
                     updateChart(speedInMBps);
+                    updateTotalData(speedInMBps);
                 });
         }
 
@@ -152,6 +159,17 @@
             speedData.push(speed);
             chart.data.labels.push('');
             chart.update();
+        }
+
+        function updateTotalData(speedInMBps) {
+            totalData += parseFloat(speedInMBps) / 1024; // Convert MB to GB
+            updateTotalDataDisplay();
+        }
+
+        function updateTotalDataDisplay() {
+            const totalDataText = "Total Data: " + totalData.toFixed(2) + " GB";
+            document.getElementById("totalDataDisplay").innerText = totalDataText;
+            localStorage.setItem('totalDataDisplay', totalDataText);
         }
 
         function resizeChart() {
@@ -175,6 +193,9 @@
 
             const savedSpeed = localStorage.getItem('speedDisplay') || "Speed: 0 MB/s";
             document.getElementById("speedDisplay").innerText = savedSpeed;
+
+            const savedTotalData = localStorage.getItem('totalDataDisplay') || "Total Data: 0 GB";
+            document.getElementById("totalDataDisplay").innerText = savedTotalData;
 
             const ctx = document.getElementById('myChart').getContext('2d');
             chart = new Chart(ctx, {
@@ -218,7 +239,10 @@
         <button id="stopButton" onclick="stop()" disabled>Stop</button>
         <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
     </div>
-    <div id="speedDisplay">Speed: 0 MB/s</div>
+    <div class="statsDisplay">
+        <div id="speedDisplay">Speed: 0 MB/s</div>
+        <div id="totalDataDisplay">Total Data: 0 GB</div>
+    </div>
     <div id="chartContainer">
         <canvas id="myChart"></canvas>
     </div>

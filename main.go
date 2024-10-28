@@ -21,6 +21,8 @@ var (
 )
 
 func handleReannounce(w http.ResponseWriter, r *http.Request) {
+	defer recoverPanic(w)
+
 	if r.Method == http.MethodPost {
 		// 获取当前可执行文件的路径
 		cwd, err := os.Getwd()
@@ -43,25 +45,20 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// log.Println("AAA")
-
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
 			http.Error(w, "Failed to get stderr pipe: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// log.Println("BBB")
-		// 启动命令
+
 		if err := cmd.Start(); err != nil {
 			http.Error(w, "Failed to start command: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// log.Println("CCC")
-		// 读取标准输出和标准错误
+
 		output, _ := io.ReadAll(stdout)
 		errorOutput, _ := io.ReadAll(stderr)
-		// log.Println("DDD")
-		// 等待命令完成
+
 		if err := cmd.Wait(); err != nil {
 			http.Error(w, "Command failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -69,7 +66,6 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 
 		// 打印输出到日志中
 		log.Println("Script output:\n", string(output))
-		// log.Println("Script error output:", string(errorOutput))
 
 		w.Write([]byte("Re-announce completed with output:\n" + string(output) + "\n" + string(errorOutput)))
 	} else {
@@ -77,20 +73,25 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func recoverPanic(w http.ResponseWriter) {
+	if r := recover(); r != nil {
+		log.Println("Recovered from panic:", r)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
 
 func main() {
-	// 解析命令行参数
 	var port string
 	flag.StringVar(&port, "port", "8084", "Port to listen on")
 	flag.Parse()
 
-	// 解析模板
 	tmpl, err := template.ParseFiles("templates/index.html")
 	if err != nil {
 		log.Fatalf("Failed to parse template: %v", err)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
 		if r.Method == http.MethodGet {
 			err := tmpl.Execute(w, nil)
 			if err != nil {
@@ -100,6 +101,7 @@ func main() {
 	})
 
 	http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
 		if r.Method == http.MethodPost {
 			peerAddr := r.FormValue("peerAddr")
 			infoHash := r.FormValue("infoHash")
@@ -116,6 +118,7 @@ func main() {
 	})
 
 	http.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
 		if r.Method == http.MethodPost {
 			if stopChan != nil {
 				close(stopChan)
@@ -127,6 +130,7 @@ func main() {
 	})
 
 	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
 		if r.Method == http.MethodGet {
 			speed := atomic.LoadInt64(&currentSpeed)
 			response := map[string]int64{"speed": speed}
@@ -144,8 +148,6 @@ func main() {
 
 	http.HandleFunc("/reannounce", handleReannounce)
 
-	// 打印用户输入的端口号
 	log.Printf("start to listen port: %s...", port)
-
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
