@@ -6,5 +6,5 @@
 go run main.go --port=8084
 ```
 
-支持对qbittorrent服务端进行全体reanncounce，掩耳盗铃般得抹除一些tracker服务器后台统计数据。
+支持对qbittorrent服务端的所有做种项进行全体reanncounce，掩耳盗铃般得抹除一些tracker服务器后台统计数据。
 
