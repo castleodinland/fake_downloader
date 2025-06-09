@@ -6,3 +6,15 @@ channel = "stable-24_05"
 [[ports]]
 localPort = 8084
 externalPort = 80
+
+[workflows]
+runButton = "Start Server"
+
+[[workflows.workflow]]
+name = "Start Server"
+author = 43642730
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run main.go --port=8084"
