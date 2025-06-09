@@ -85,6 +85,12 @@
         function start() {
             var peerAddr = document.getElementById("peerAddr").value;
             var infoHash = document.getElementById("infoHash").value;
+            
+            // Basic validation for IPv6 addresses
+            if (peerAddr.includes(':') && !peerAddr.includes('[') && peerAddr.split(':').length > 2) {
+                alert("IPv6 addresses must be enclosed in brackets, e.g., [2001:db8::1]:8080");
+                return;
+            }
 
             fetch('/start', {
                 method: 'POST',
@@ -239,7 +245,7 @@
 <body>
     <h1>Fake Downloader For PT</h1>
     <div class="input-group">
-        <input type="text" id="peerAddr" placeholder="Peer Address" value="127.0.0.1:63219">
+        <input type="text" id="peerAddr" placeholder="Peer Address (IPv4: 127.0.0.1:63219 or IPv6: [::1]:63219)" value="127.0.0.1:63219">
         <input type="text" id="infoHash" placeholder="Info Hash">
     </div>
     <div class="button-group">
