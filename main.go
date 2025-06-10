@@ -1,9 +1,9 @@
-
 package main
 
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -34,31 +34,31 @@ func NewSessionManager() *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 	}
-	
+
 	// 启动清理goroutine，定期清理过期会话
 	go sm.cleanupExpiredSessions()
-	
+
 	return sm
 }
 
 func (sm *SessionManager) CreateSession(sessionID string) *Session {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	
+
 	// 如果会话已存在，先清理
 	if existingSession, exists := sm.sessions[sessionID]; exists {
 		if existingSession.StopChan != nil {
 			close(existingSession.StopChan)
 		}
 	}
-	
+
 	session := &Session{
 		ID:        sessionID,
 		StopChan:  make(chan struct{}),
 		Speed:     new(int64),
 		CreatedAt: time.Now(),
 	}
-	
+
 	sm.sessions[sessionID] = session
 	return session
 }
@@ -66,7 +66,7 @@ func (sm *SessionManager) CreateSession(sessionID string) *Session {
 func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 	sm.mutex.RLock()
 	defer sm.mutex.RUnlock()
-	
+
 	session, exists := sm.sessions[sessionID]
 	return session, exists
 }
@@ -74,16 +74,16 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 func (sm *SessionManager) StopSession(sessionID string) bool {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	
+
 	session, exists := sm.sessions[sessionID]
 	if !exists {
 		return false
 	}
-	
+
 	if session.StopChan != nil {
 		close(session.StopChan)
 	}
-	
+
 	delete(sm.sessions, sessionID)
 	return true
 }
@@ -91,7 +91,7 @@ func (sm *SessionManager) StopSession(sessionID string) bool {
 func (sm *SessionManager) cleanupExpiredSessions() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		sm.mutex.Lock()
 		now := time.Now()
@@ -199,9 +199,9 @@ func main() {
 			sessionID := getSessionID(r)
 			peerAddr := r.FormValue("peerAddr")
 			infoHash := r.FormValue("infoHash")
-			
+
 			session := sessionManager.CreateSession(sessionID)
-			
+
 			go func() {
 				err := util.ConnectPeerWithStop(peerAddr, infoHash, session.StopChan, session.Speed)
 				if err != nil {
@@ -220,7 +220,7 @@ func main() {
 		defer recoverPanic(w)
 		if r.Method == http.MethodPost {
 			sessionID := getSessionID(r)
-			
+
 			if sessionManager.StopSession(sessionID) {
 				log.Printf("Stopped session: %s", sessionID)
 				w.Write([]byte("Stopped"))
@@ -236,14 +236,14 @@ func main() {
 		defer recoverPanic(w)
 		if r.Method == http.MethodGet {
 			sessionID := getSessionID(r)
-			
+
 			session, exists := sessionManager.GetSession(sessionID)
 			var speed int64 = 0
-			
+
 			if exists {
 				speed = atomic.LoadInt64(session.Speed)
 			}
-			
+
 			response := map[string]int64{"speed": speed}
 			jsonResponse, err := json.Marshal(response)
 			if err != nil {
@@ -258,20 +258,20 @@ func main() {
 	})
 
 	http.HandleFunc("/reannounce", handleReannounce)
-	
+
 	// 添加并发测试端点
 	http.HandleFunc("/test-concurrent", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
-		
+
 		sessionCount := len(sessionManager.sessions)
 		response := fmt.Sprintf("Active sessions: %d\nSession IDs:\n", sessionCount)
-		
+
 		sessionManager.mutex.RLock()
 		for sessionID := range sessionManager.sessions {
 			response += fmt.Sprintf("- %s\n", sessionID)
 		}
 		sessionManager.mutex.RUnlock()
-		
+
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(response))
 	})
