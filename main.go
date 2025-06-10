@@ -175,7 +175,7 @@ func recoverPanic(w http.ResponseWriter) {
 
 func main() {
 	var port string
-	flag.StringVar(&port, "port", "8084", "Port to listen on")
+	flag.StringVar(&port, "port", "5000", "Port to listen on")
 	flag.Parse()
 
 	tmpl, err := template.ParseFiles("templates/index.html")
@@ -258,6 +258,23 @@ func main() {
 	})
 
 	http.HandleFunc("/reannounce", handleReannounce)
+	
+	// 添加并发测试端点
+	http.HandleFunc("/test-concurrent", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
+		
+		sessionCount := len(sessionManager.sessions)
+		response := fmt.Sprintf("Active sessions: %d\nSession IDs:\n", sessionCount)
+		
+		sessionManager.mutex.RLock()
+		for sessionID := range sessionManager.sessions {
+			response += fmt.Sprintf("- %s\n", sessionID)
+		}
+		sessionManager.mutex.RUnlock()
+		
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(response))
+	})
 
 	log.Printf("start to listen port: %s...", port)
 	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))

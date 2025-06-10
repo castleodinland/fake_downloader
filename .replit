@@ -4,7 +4,7 @@ modules = ["web", "go-1.21", "python-3.12"]
 channel = "stable-24_05"
 
 [[ports]]
-localPort = 8084
+localPort = 5000
 externalPort = 80
 
 [workflows]
@@ -17,4 +17,4 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "go run main.go --port=8084"
+args = "go run main.go --port=5000"
