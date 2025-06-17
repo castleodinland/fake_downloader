@@ -175,7 +175,9 @@ func recoverPanic(w http.ResponseWriter) {
 
 func main() {
 	var port string
+	var defaultPeerAddr string
 	flag.StringVar(&port, "port", "5000", "Port to listen on")
+	flag.StringVar(&defaultPeerAddr, "addr", "127.0.0.1:63219", "Default peer address for the web UI input")
 	flag.Parse()
 
 	tmpl, err := template.ParseFiles("templates/index.html")
@@ -186,7 +188,12 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
 		if r.Method == http.MethodGet {
-			err := tmpl.Execute(w, nil)
+			data := struct {
+				DefaultPeerAddr string
+			}{
+				DefaultPeerAddr: defaultPeerAddr,
+			}
+			err := tmpl.Execute(w, data)
 			if err != nil {
 				http.Error(w, "Failed to render template", http.StatusInternalServerError)
 			}
