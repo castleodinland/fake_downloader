@@ -3,7 +3,7 @@
 
 启动命令：
 ```bash
-go run main.go --port=8084
+go run main.go --port=8084 --addr=127.0.0.1:63219
 ```
 
 支持对qbittorrent服务端的所有做种项进行全体reanncounce，掩耳盗铃般得抹除一些tracker服务器后台统计数据。
