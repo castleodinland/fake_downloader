@@ -1,9 +1,14 @@
 ### 一个虚假的BT/PT下载端
 只要知道服务器 peers的IP和port，以及种子的hash值，就可以对其进行虚假下载
 
-启动命令：
+调试启动命令：
 ```bash
-go run main.go --port=8084 --addr=127.0.0.1:63219
+go run main.go -dev --port=8084 --addr=127.0.0.1:63219
+```
+
+可执行文件启动命令：
+```bash
+./fake_server --port=8084 --addr=127.0.0.1:63219
 ```
 
 支持对qbittorrent服务端的所有做种项进行全体reanncounce，掩耳盗铃般得抹除一些tracker服务器后台统计数据。
