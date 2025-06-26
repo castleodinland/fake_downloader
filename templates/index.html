@@ -228,6 +228,7 @@
             </table>
         </div>
     </div>
+    <div id="sidebarOverlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999;background:rgba(0,0,0,0);"></div>
 
 <script>
     let intervalId;
@@ -235,13 +236,23 @@
     let totalData = 0;
 
     // --- Sidebar ---
-    function toggleSidebar() {
+    function toggleSidebar(show) {
         const sidebar = document.getElementById('sidebar');
         const button = document.getElementById('toggleSidebarButton');
-        sidebar.classList.toggle('visible');
-        if (sidebar.classList.contains('visible')) {
+        const overlay = document.getElementById('sidebarOverlay');
+        let visible;
+        if (typeof show === 'boolean') {
+            visible = show;
+        } else {
+            visible = !sidebar.classList.contains('visible');
+        }
+        if (visible) {
+            sidebar.classList.add('visible');
+            overlay.style.display = 'block';
             button.textContent = 'Hide Saved';
         } else {
+            sidebar.classList.remove('visible');
+            overlay.style.display = 'none';
             button.textContent = 'Show Saved';
         }
     }
@@ -502,6 +513,9 @@
                 animation: { duration: 200 }
             }
         });
+        document.getElementById('sidebarOverlay').onclick = function() {
+            toggleSidebar(false);
+        };
     }
 </script>
 
