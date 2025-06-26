@@ -4,14 +4,32 @@
     <title>Fake Downloader For PT</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        :root {
+            --sidebar-width: 600px;
+            --sidebar-transition-speed: 0.4s;
+        }
+
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 0;
             background-color: #f4f4f9;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
         }
+
+        /* Main Content Area */
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            transition: margin-right var(--sidebar-transition-speed) ease;
+        }
+
         h1, h2 {
             color: #333;
         }
+
         .container {
             background-color: white;
             padding: 20px;
@@ -19,26 +37,26 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }
-        /* Restored original input group styles */
-        .input-group, .button-group, .statsDisplay {
+
+        .input-group, .button-group {
             display: flex;
+            flex-wrap: wrap;
+            align-items: center;
             margin-bottom: 15px;
-            justify-content: flex-start;
         }
+
         .input-group input {
             padding: 10px;
             margin-right: 10px;
+            margin-bottom: 10px; /* For wrapping on small screens */
             border: 1px solid #ccc;
             border-radius: 5px;
             font-size: 16px;
         }
-        /* Restored original input widths */
-        #peerAddr {
-            width: 200px;
-        }
-        #infoHash {
-            width: 500px;
-        }
+
+        #peerAddr { width: 200px; }
+        #infoHash { width: 500px; }
+
         button {
             padding: 10px 20px;
             margin-right: 10px;
@@ -49,62 +67,97 @@
             cursor: pointer;
             transition: background-color 0.3s, opacity 0.3s;
         }
+
         button#startButton { background-color: #4CAF50; color: white; }
         button#stopButton { background-color: #f44336; color: white; }
         button#reannounceButton { background-color: #008CBA; color: white; }
         button#saveButton { background-color: #ff9800; color: white; }
-        .action-button {
-            padding: 5px 10px; 
-            font-size: 14px;
-            margin-right: 5px;
-            margin-bottom: 0;
-        }
-        .action-button-load { background-color: #795548; color: white; }
-        .action-button-edit { background-color: #2196F3; color: white; }
-        .action-button-delete { background-color: #e91e63; color: white; }
-        .action-button-save { background-color: #4CAF50; color: white; }
-        .action-button-cancel { background-color: #6c757d; color: white; }
+        button#toggleSidebarButton { background-color: #607D8B; color: white; }
 
         button:hover { opacity: 0.8; }
         button:disabled { background-color: #ccc; cursor: not-allowed; opacity: 0.6; }
-        
+
         #chartContainer {
             width: 100%;
-            height: 60vh;
+            height: 55vh;
             margin-top: 20px;
         }
+
         .statsDisplay {
             display: flex;
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 20px;
         }
+
         #totalDataDisplay { margin-left: 20px; }
-        
-        /* Saved Entries Table Styles */
+
+        /* Sidebar for Saved Entries */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            right: calc(-1 * var(--sidebar-width)); /* Hidden by default */
+            width: var(--sidebar-width);
+            height: 100%;
+            background-color: #ffffff;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: right var(--sidebar-transition-speed) ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar.visible {
+            right: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .sidebar-content {
+            padding: 20px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        /* Table Styles */
         #entriesTable {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
         }
+
         #entriesTable th, #entriesTable td {
             border: 1px solid #ddd;
-            padding: 12px;
+            padding: 10px;
             text-align: left;
             vertical-align: middle;
+            word-break: break-all;
         }
+
         #entriesTable th {
             background-color: #f2f2f2;
             font-weight: bold;
         }
-        #entriesTable tr:nth-child(even) { background-color: #f9f9f9; }
-        #entriesTable tr:hover { background-color: #f1f1f1; }
+        
         #entriesTable .actions {
             display: flex;
             gap: 5px;
-            flex-wrap: nowrap;
-            width: fit-content;
+            flex-wrap: wrap;
         }
+        
+        .action-button {
+            padding: 5px 10px; 
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .action-button-load { background-color: #795548; color: white; }
+        .action-button-edit { background-color: #2196F3; color: white; }
+        .action-button-delete { background-color: #e91e63; color: white; }
+        .action-button-save { background-color: #4CAF50; color: white; }
+        .action-button-cancel { background-color: #6c757d; color: white; }
+
         .table-input {
             width: 95%;
             padding: 8px;
@@ -114,63 +167,84 @@
     </style>
 </head>
 <body>
-    <h1>Fake Downloader For PT</h1>
 
-    <div class="container">
-        <h2>Controls</h2>
-        <div class="input-group">
-            <input type="text" id="peerAddr" name="peerAddr" placeholder="Peer Address (e.g., 127.0.0.1:63219)" value="{{.DefaultPeerAddr}}">
-            <input type="text" id="infoHash" placeholder="Info Hash">
+    <div class="main-content">
+        <h1>Fake Downloader For PT</h1>
+        <div class="container">
+            <h2>Controls</h2>
+            <div class="input-group">
+                <input type="text" id="peerAddr" name="peerAddr" placeholder="Peer Address (e.g., 127.0.0.1:63219)" value="{{.DefaultPeerAddr}}">
+                <input type="text" id="infoHash" placeholder="Info Hash">
+            </div>
+            <div class="button-group">
+                <button id="startButton" onclick="start()">Start</button>
+                <button id="stopButton" onclick="stop()" disabled>Stop</button>
+                <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
+                <button id="saveButton" onclick="saveEntry()">Save Current</button>
+                <button id="toggleSidebarButton" onclick="toggleSidebar()">Show Saved</button>
+            </div>
+            <div class="statsDisplay">
+                <div id="speedDisplay">Speed: 0 MB/s</div>
+                <div id="totalDataDisplay">Total Data: 0 GB</div>
+            </div>
         </div>
-        <div class="button-group">
-            <button id="startButton" onclick="start()">Start</button>
-            <button id="stopButton" onclick="stop()" disabled>Stop</button>
-            <button id="reannounceButton" onclick="reannounce()">Re-announce</button>
-            <button id="saveButton" onclick="saveEntry()">Save Current</button>
-        </div>
-        <div class="statsDisplay">
-            <div id="speedDisplay">Speed: 0 MB/s</div>
-            <div id="totalDataDisplay">Total Data: 0 GB</div>
-        </div>
-        <div id="chartContainer">
-            <canvas id="myChart"></canvas>
+
+        <div class="container">
+            <div id="chartContainer">
+                <canvas id="myChart"></canvas>
+            </div>
         </div>
     </div>
 
-    <div class="container">
-        <h2>Saved Entries</h2>
-        <table id="entriesTable">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Peer Address</th>
-                    <th>Info Hash</th>
-                    <th style="width: 220px;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Entries will be populated by Go template and JavaScript -->
-                {{range .Entries}}
-                <tr id="entry-{{.ID}}">
-                    <td data-field="name">{{.Name}}</td>
-                    <td data-field="peerAddr">{{.PeerAddr}}</td>
-                    <td data-field="infoHash">{{.InfoHash}}</td>
-                    <td class="actions">
-                        <button class="action-button action-button-load" onclick="loadEntryToInputs('{{.PeerAddr}}', '{{.InfoHash}}')">Load</button>
-                        <button class="action-button action-button-edit" onclick="enterEditMode('{{.ID}}')">Edit</button>
-                        <button class="action-button action-button-delete" onclick="deleteEntry('{{.ID}}')">Delete</button>
-                    </td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h2>Saved Entries</h2>
+        </div>
+        <div class="sidebar-content">
+            <table id="entriesTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Peer Address</th>
+                        <th>Info Hash</th>
+                        <th style="width: 130px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Entries will be populated by Go template and JavaScript -->
+                    {{range .Entries}}
+                    <tr id="entry-{{.ID}}">
+                        <td data-field="name">{{.Name}}</td>
+                        <td data-field="peerAddr">{{.PeerAddr}}</td>
+                        <td data-field="infoHash">{{.InfoHash}}</td>
+                        <td class="actions">
+                            <button class="action-button action-button-load" onclick="loadEntryToInputs('{{.PeerAddr}}', '{{.InfoHash}}')">Load</button>
+                            <button class="action-button action-button-edit" onclick="enterEditMode('{{.ID}}')">Edit</button>
+                            <button class="action-button action-button-delete" onclick="deleteEntry('{{.ID}}')">Delete</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
     </div>
 
 <script>
     let intervalId;
-    let speedData = [];
     let chart;
     let totalData = 0;
+
+    // --- Sidebar ---
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const button = document.getElementById('toggleSidebarButton');
+        sidebar.classList.toggle('visible');
+        if (sidebar.classList.contains('visible')) {
+            button.textContent = 'Hide Saved';
+        } else {
+            button.textContent = 'Show Saved';
+        }
+    }
 
     // --- Core Functions (Start, Stop, etc.) ---
 
@@ -182,17 +256,12 @@
     function start() {
         const peerAddr = document.getElementById("peerAddr").value;
         const infoHash = document.getElementById("infoHash").value;
-        
         if (!peerAddr || !infoHash) {
-            alert("Peer Address and Info Hash cannot be empty.");
-            return;
+            alert("Peer Address and Info Hash cannot be empty."); return;
         }
-
         if (peerAddr.includes(':') && !peerAddr.startsWith('[') && peerAddr.split(':').length > 2) {
-            alert("IPv6 addresses must be enclosed in brackets, e.g., [2001:db8::1]:8080");
-            return;
+            alert("IPv6 addresses must be enclosed in brackets, e.g., [2001:db8::1]:8080"); return;
         }
-
         fetch('/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -220,10 +289,9 @@
                 toggleButtons(true);
                 stopMonitoring();
                 localStorage.setItem('isStarted', 'false');
-                speedData = [];
                 if (chart) {
+                    chart.data.datasets[0].data = [];
                     chart.data.labels = [];
-                    chart.data.datasets[0].data = speedData;
                     chart.update();
                 }
             });
@@ -245,7 +313,7 @@
     // --- Speed Monitoring & Charting ---
 
     function startMonitoring() {
-        stopMonitoring(); // Ensure no multiple intervals are running
+        stopMonitoring();
         intervalId = setInterval(fetchSpeed, 1000);
     }
 
@@ -269,20 +337,20 @@
 
     function updateChart(speed) {
         if (!chart) return;
-        const labelCount = chart.data.labels.length;
-        if(labelCount > 120) {
-            chart.data.labels.shift();
-            chart.data.datasets[0].data.shift();
+        const data = chart.data.datasets[0].data;
+        const labels = chart.data.labels;
+        if(labels.length > 120) {
+            labels.shift();
+            data.shift();
         }
-        chart.data.labels.push('');
-        chart.data.datasets[0].data.push(speed);
+        labels.push('');
+        data.push(speed);
         chart.update();
     }
 
     function updateTotalData(speedInMBps) {
         totalData += parseFloat(speedInMBps);
-        const totalDataGB = (totalData / 1024).toFixed(3);
-        document.getElementById("totalDataDisplay").innerText = `Total Data: ${totalDataGB} GB`;
+        updateTotalDataDisplay();
     }
 
     function updateTotalDataDisplay() {
@@ -295,14 +363,14 @@
     function loadEntryToInputs(peerAddr, infoHash) {
         document.getElementById("peerAddr").value = peerAddr;
         document.getElementById("infoHash").value = infoHash;
+        toggleSidebar(); // Hide sidebar after loading
     }
 
     async function saveEntry() {
         const peerAddr = document.getElementById("peerAddr").value;
         const infoHash = document.getElementById("infoHash").value;
         if (!peerAddr || !infoHash) {
-            alert("Peer Address and Info Hash cannot be empty to save.");
-            return;
+            alert("Peer Address and Info Hash cannot be empty to save."); return;
         }
         const name = prompt("Enter a name for this entry:", "New Entry");
         if (!name) return;
@@ -335,17 +403,13 @@
 
     function enterEditMode(id) {
         const row = document.getElementById(`entry-${id}`);
-        if (row.classList.contains('editing')) return; // Already in edit mode
+        if (row.classList.contains('editing')) return;
         row.classList.add('editing');
-
-        // Store original values and create input fields
         row.querySelectorAll('td[data-field]').forEach(td => {
             const currentValue = td.textContent;
             td.setAttribute('data-original-value', currentValue);
             td.innerHTML = `<input type="text" class="table-input" value="${currentValue}">`;
         });
-
-        // Change action buttons
         const actionsCell = row.querySelector('.actions');
         actionsCell.innerHTML = `
             <button class="action-button action-button-save" onclick="updateEntry('${id}')">Save</button>
@@ -357,13 +421,9 @@
         const row = document.getElementById(`entry-${id}`);
         if (!row.classList.contains('editing')) return;
         row.classList.remove('editing');
-
-        // Restore original values from data attribute
         row.querySelectorAll('td[data-field]').forEach(td => {
             td.innerHTML = td.getAttribute('data-original-value');
         });
-
-        // Restore original action buttons
         const peerAddr = row.querySelector('td[data-field="peerAddr"]').textContent;
         const infoHash = row.querySelector('td[data-field="infoHash"]').textContent;
         const actionsCell = row.querySelector('.actions');
@@ -378,11 +438,8 @@
         const row = document.getElementById(`entry-${id}`);
         const entryData = { id };
         row.querySelectorAll('td[data-field]').forEach(td => {
-            const field = td.dataset.field;
-            const value = td.querySelector('input').value;
-            entryData[field] = value;
+            entryData[td.dataset.field] = td.querySelector('input').value;
         });
-
         try {
             const response = await fetch(`/api/entries/${id}`, {
                 method: 'PUT',
@@ -390,8 +447,6 @@
                 body: JSON.stringify(entryData)
             });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
-
-            // On success, finalize the view
             row.classList.remove('editing');
             row.querySelectorAll('td[data-field]').forEach(td => {
                 td.innerHTML = entryData[td.dataset.field];
@@ -405,8 +460,6 @@
         } catch (error) {
             console.error("Failed to update entry:", error);
             alert("Error: Could not update the entry.");
-            // Optional: revert to original values on failure by calling cancelEditMode
-            // cancelEditMode(id); 
         }
     }
     
@@ -427,38 +480,25 @@
     }
 
     // --- Window Load Initialization ---
-
     window.onload = function() {
         const isStarted = localStorage.getItem('isStarted') === 'true';
         toggleButtons(!isStarted);
-
         if (isStarted) {
             document.getElementById("peerAddr").value = localStorage.getItem('peerAddr') || '{{.DefaultPeerAddr}}';
             document.getElementById("infoHash").value = localStorage.getItem('infoHash') || '';
             startMonitoring();
         }
-
         const ctx = document.getElementById('myChart').getContext('2d');
         chart = new Chart(ctx, {
             type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Download Speed (MB/s)',
-                    data: [],
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    fill: true,
-                    tension: 0.2
-                }]
-            },
+            data: { labels: [], datasets: [{
+                label: 'Download Speed (MB/s)', data: [],
+                borderColor: 'rgba(75, 192, 192, 1)', backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                fill: true, tension: 0.2
+            }]},
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: { display: false },
-                    y: { beginAtZero: true }
-                },
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { display: false }, y: { beginAtZero: true } },
                 animation: { duration: 200 }
             }
         });
