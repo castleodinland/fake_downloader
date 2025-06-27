@@ -5,7 +5,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --sidebar-width: 600px;
+            /* Further increased sidebar width for button compactness */
+            --sidebar-width: 950px;
             --sidebar-transition-speed: 0.4s;
         }
 
@@ -91,6 +92,21 @@
         }
 
         #totalDataDisplay { margin-left: 20px; }
+        
+        /* Clickable Overlay */
+        #sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 999;
+        }
+        #sidebar-overlay.visible {
+            display: block;
+        }
 
         /* Sidebar for Saved Entries */
         .sidebar {
@@ -105,13 +121,24 @@
         .sidebar-content { padding: 20px; overflow-y: auto; flex-grow: 1; }
 
         /* Table Styles */
-        #entriesTable { width: 100%; border-collapse: collapse; }
+        #entriesTable { width: 100%; border-collapse: collapse; table-layout: fixed; }
         #entriesTable th, #entriesTable td {
             border: 1px solid #ddd; padding: 10px; text-align: left;
-            vertical-align: middle; word-break: break-all;
+            vertical-align: middle; 
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         #entriesTable th { background-color: #f2f2f2; font-weight: bold; }
-        #entriesTable .actions { display: flex; gap: 5px; flex-wrap: wrap; }
+        
+        /* Column width adjustments for compactness */
+        #entriesTable th:nth-child(1) { width: 20%; } /* Name */
+        #entriesTable th:nth-child(2) { width: 25%; } /* Peer Address */
+        #entriesTable th:nth-child(3) { width: 30%; } /* Info Hash */
+        #entriesTable th:nth-child(4) { width: 25%; } /* Actions */
+
+
+        #entriesTable .actions { display: flex; gap: 5px; flex-wrap: nowrap; } /* Changed to nowrap */
         .action-button { padding: 5px 10px; font-size: 14px; white-space: nowrap; }
         .action-button-load { background-color: #795548; color: white; }
         .action-button-edit { background-color: #2196F3; color: white; }
@@ -167,8 +194,8 @@
         </div>
     </div>
 
+    <div id="sidebar-overlay"></div>
     <div id="sidebar" class="sidebar">
-        <!-- Sidebar content from previous step -->
         <div class="sidebar-header">
             <h2>Saved Entries</h2>
         </div>
@@ -179,15 +206,15 @@
                         <th>Name</th>
                         <th>Peer Address</th>
                         <th>Info Hash</th>
-                        <th style="width: 130px;">Actions</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Entries}}
                     <tr id="entry-{{.ID}}">
-                        <td data-field="name">{{.Name}}</td>
-                        <td data-field="peerAddr">{{.PeerAddr}}</td>
-                        <td data-field="infoHash">{{.InfoHash}}</td>
+                        <td data-field="name" title="{{.Name}}">{{.Name}}</td>
+                        <td data-field="peerAddr" title="{{.PeerAddr}}">{{.PeerAddr}}</td>
+                        <td data-field="infoHash" title="{{.InfoHash}}">{{.InfoHash}}</td>
                         <td class="actions">
                             <button class="action-button action-button-load" onclick="loadEntryToInputs('{{.PeerAddr}}', '{{.InfoHash}}')">Load</button>
                             <button class="action-button action-button-edit" onclick="enterEditMode('{{.ID}}')">Edit</button>
@@ -200,7 +227,6 @@
         </div>
     </div>
     
-    <!-- Custom Modal Structure -->
     <div id="modal-overlay" class="modal-overlay">
         <div id="modal" class="modal">
             <div id="modal-header" class="modal-header">
@@ -220,9 +246,12 @@
     // --- Sidebar ---
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
         const button = document.getElementById('toggleSidebarButton');
-        sidebar.classList.toggle('visible');
-        button.textContent = sidebar.classList.contains('visible') ? 'Hide Saved' : 'Show Saved';
+        const isVisible = sidebar.classList.toggle('visible');
+        
+        overlay.classList.toggle('visible', isVisible);
+        button.textContent = isVisible ? 'Hide Saved' : 'Show Saved';
     }
 
     // --- Modal Functions ---
@@ -230,7 +259,7 @@
         const overlay = document.getElementById('modal-overlay');
         document.getElementById('modal-title').textContent = config.title;
         const body = document.getElementById('modal-body');
-        body.innerHTML = ''; // Clear previous content
+        body.innerHTML = '';
         if (config.message) {
             const p = document.createElement('p');
             p.textContent = config.message;
@@ -271,7 +300,6 @@
         document.getElementById("stopButton").disabled = startEnabled;
     }
     function start() {
-        // ... (start function remains unchanged)
         const peerAddr = document.getElementById("peerAddr").value;
         const infoHash = document.getElementById("infoHash").value;
         if (!peerAddr || !infoHash) {
@@ -295,7 +323,6 @@
         }).catch(err => console.error(err));
     }
     function stop() {
-        // ... (stop function remains unchanged)
         fetch('/stop', { method: 'POST' })
             .then(response => response.text())
             .then(data => {
@@ -311,7 +338,6 @@
             });
     }
     function reannounce() {
-        // ... (reannounce function remains unchanged)
         const button = document.getElementById("reannounceButton");
         button.disabled = true;
         fetch('/reannounce', { method: 'POST' })
@@ -327,7 +353,7 @@
     // --- Speed Monitoring & Charting ---
     function startMonitoring() { stopMonitoring(); intervalId = setInterval(fetchSpeed, 1000); }
     function stopMonitoring() { clearInterval(intervalId); }
-    function fetchSpeed() { /* ... (remains unchanged) ... */ 
+    function fetchSpeed() { 
         fetch('/speed')
             .then(response => response.json())
             .then(data => {
@@ -337,7 +363,7 @@
                 updateTotalData(speedInMBps);
             }).catch(() => { stop(); document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s"; });
     }
-    function updateChart(speed) { /* ... (remains unchanged) ... */ 
+    function updateChart(speed) { 
         if (!chart) return;
         const data = chart.data.datasets[0].data;
         const labels = chart.data.labels;
@@ -420,13 +446,14 @@
         }
     }
 
-    // --- Edit/Update functions (remain unchanged) ---
-    function enterEditMode(id) { /* ... (remains unchanged) ... */ 
+    // --- Edit/Update functions ---
+    function enterEditMode(id) { 
         const row = document.getElementById(`entry-${id}`);
         if (row.classList.contains('editing')) return;
         row.classList.add('editing');
         row.querySelectorAll('td[data-field]').forEach(td => {
-            const currentValue = td.textContent;
+            td.style.whiteSpace = 'normal';
+            const currentValue = td.getAttribute('title');
             td.setAttribute('data-original-value', currentValue);
             td.innerHTML = `<input type="text" class="table-input" value="${currentValue}">`;
         });
@@ -436,12 +463,15 @@
             <button class="action-button action-button-cancel" onclick="cancelEditMode('${id}')">Cancel</button>
         `;
     }
-    function cancelEditMode(id) { /* ... (remains unchanged) ... */
+    function cancelEditMode(id) {
         const row = document.getElementById(`entry-${id}`);
         if (!row.classList.contains('editing')) return;
         row.classList.remove('editing');
         row.querySelectorAll('td[data-field]').forEach(td => {
-            td.innerHTML = td.getAttribute('data-original-value');
+            td.style.whiteSpace = 'nowrap';
+            const originalValue = td.getAttribute('data-original-value');
+            td.innerHTML = originalValue;
+            td.setAttribute('title', originalValue);
         });
         const peerAddr = row.querySelector('td[data-field="peerAddr"]').textContent;
         const infoHash = row.querySelector('td[data-field="infoHash"]').textContent;
@@ -452,7 +482,7 @@
             <button class="action-button action-button-delete" onclick="handleDeleteEntry('${id}')">Delete</button>
         `;
     }
-    async function updateEntry(id) { /* ... (remains unchanged) ... */
+    async function updateEntry(id) {
         const row = document.getElementById(`entry-${id}`);
         const entryData = { id };
         row.querySelectorAll('td[data-field]').forEach(td => { entryData[td.dataset.field] = td.querySelector('input').value; });
@@ -464,7 +494,11 @@
             });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
             row.classList.remove('editing');
-            row.querySelectorAll('td[data-field]').forEach(td => { td.innerHTML = entryData[td.dataset.field]; });
+            row.querySelectorAll('td[data-field]').forEach(td => {
+                 td.style.whiteSpace = 'nowrap';
+                 td.innerHTML = entryData[td.dataset.field];
+                 td.setAttribute('title', entryData[td.dataset.field]);
+            });
             const actionsCell = row.querySelector('.actions');
             actionsCell.innerHTML = `
                 <button class="action-button action-button-load" onclick="loadEntryToInputs('${entryData.peerAddr}', '${entryData.infoHash}')">Load</button>
@@ -476,14 +510,14 @@
             showModal({ title: "Error", message: "Could not update the entry.", buttons: [{ label: 'OK' }] });
         }
     }
-    function addTableRow(entry) { /* ... (remains unchanged) ... */
+    function addTableRow(entry) {
         const tableBody = document.getElementById('entriesTable').getElementsByTagName('tbody')[0];
         const newRow = tableBody.insertRow();
         newRow.id = `entry-${entry.id}`;
         newRow.innerHTML = `
-            <td data-field="name">${entry.name}</td>
-            <td data-field="peerAddr">${entry.peerAddr}</td>
-            <td data-field="infoHash">${entry.infoHash}</td>
+            <td data-field="name" title="${entry.name}">${entry.name}</td>
+            <td data-field="peerAddr" title="${entry.peerAddr}">${entry.peerAddr}</td>
+            <td data-field="infoHash" title="${entry.infoHash}">${entry.infoHash}</td>
             <td class="actions">
                 <button class="action-button action-button-load" onclick="loadEntryToInputs('${entry.peerAddr}', '${entry.infoHash}')">Load</button>
                 <button class="action-button action-button-edit" onclick="enterEditMode('${entry.id}')">Edit</button>
@@ -514,6 +548,10 @@
                 scales: { x: { display: false }, y: { beginAtZero: true } },
                 animation: { duration: 200 }
             }
+        });
+        
+        document.getElementById('sidebar-overlay').addEventListener('click', () => {
+            toggleSidebar();
         });
     }
 </script>
