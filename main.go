@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/rand"
-	"embed" // 引入 embed 包
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"fake_dowloader/util"
 )
@@ -37,10 +36,10 @@ var (
 // --- Session Management ---
 // Session represents a user's connection session.
 type Session struct {
-	ID        string
-	StopChan  chan struct{}
-	Speed     *int64
-	CreatedAt time.Time
+	ID       string
+	StopChan chan struct{}
+	Speed    *int64
+	// BUGFIX: Removed CreatedAt field as sessions are now permanent until explicitly stopped.
 }
 
 // SessionManager manages active sessions.
@@ -54,7 +53,8 @@ func NewSessionManager() *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 	}
-	go sm.cleanupExpiredSessions()
+	// BUGFIX: Removed the call to the session cleanup goroutine.
+	// Sessions will no longer expire automatically.
 	return sm
 }
 
@@ -62,16 +62,22 @@ func NewSessionManager() *SessionManager {
 func (sm *SessionManager) CreateSession(sessionID string) *Session {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
+	// If a session for this ID already exists, stop the old one before creating a new one.
 	if existingSession, exists := sm.sessions[sessionID]; exists {
 		if existingSession.StopChan != nil {
-			close(existingSession.StopChan)
+			// Prevent closing a channel that might already be closed.
+			select {
+			case <-existingSession.StopChan:
+				// Already closed
+			default:
+				close(existingSession.StopChan)
+			}
 		}
 	}
 	session := &Session{
-		ID:        sessionID,
-		StopChan:  make(chan struct{}),
-		Speed:     new(int64),
-		CreatedAt: time.Now(),
+		ID:       sessionID,
+		StopChan: make(chan struct{}),
+		Speed:    new(int64),
 	}
 	sm.sessions[sessionID] = session
 	return session
@@ -85,7 +91,7 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 	return session, exists
 }
 
-// StopSession stops a running session.
+// StopSession stops a running session. This is now the ONLY way a session is removed.
 func (sm *SessionManager) StopSession(sessionID string) bool {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
@@ -94,31 +100,18 @@ func (sm *SessionManager) StopSession(sessionID string) bool {
 		return false
 	}
 	if session.StopChan != nil {
-		close(session.StopChan)
+		select {
+		case <-session.StopChan:
+			// Already closed
+		default:
+			close(session.StopChan)
+		}
 	}
 	delete(sm.sessions, sessionID)
 	return true
 }
 
-// cleanupExpiredSessions periodically removes old sessions.
-func (sm *SessionManager) cleanupExpiredSessions() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		sm.mutex.Lock()
-		now := time.Now()
-		for sessionID, session := range sm.sessions {
-			if now.Sub(session.CreatedAt) > 30*time.Minute {
-				if session.StopChan != nil {
-					close(session.StopChan)
-				}
-				delete(sm.sessions, sessionID)
-				log.Printf("Cleaned up expired session: %s", sessionID)
-			}
-		}
-		sm.mutex.Unlock()
-	}
-}
+// BUGFIX: The entire cleanupExpiredSessions function has been removed to ensure sessions are permanent.
 
 // --- Entry Management for Saved Data ---
 // SavedEntry represents a saved entry in our JSON database.
@@ -146,8 +139,6 @@ func NewEntryStore(file string) (*EntryStore, error) {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
-		// File doesn't exist, which is fine on first start.
-		// Create an empty file.
 		if err := store.save(); err != nil {
 			return nil, err
 		}
@@ -161,7 +152,6 @@ func (s *EntryStore) load() error {
 	if err != nil {
 		return err
 	}
-	// If the file is empty, don't try to unmarshal
 	if len(data) == 0 {
 		return nil
 	}
@@ -193,7 +183,6 @@ func (s *EntryStore) Add(entry SavedEntry) (SavedEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Generate a unique ID
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return SavedEntry{}, err
@@ -202,7 +191,6 @@ func (s *EntryStore) Add(entry SavedEntry) (SavedEntry, error) {
 	s.entries[entry.ID] = entry
 
 	if err := s.save(); err != nil {
-		// Revert change if save fails
 		delete(s.entries, entry.ID)
 		return SavedEntry{}, err
 	}
@@ -218,12 +206,10 @@ func (s *EntryStore) Update(id string, updatedEntry SavedEntry) error {
 	if !exists {
 		return fmt.Errorf("entry with ID %s not found", id)
 	}
-	// Ensure the ID is not changed
 	updatedEntry.ID = id
 	s.entries[id] = updatedEntry
 
 	if err := s.save(); err != nil {
-		// Revert change if save fails
 		s.entries[id] = originalEntry
 		return err
 	}
@@ -242,7 +228,6 @@ func (s *EntryStore) Delete(id string) error {
 	delete(s.entries, id)
 
 	if err := s.save(); err != nil {
-		// Revert change if save fails
 		s.entries[id] = originalEntry
 		return err
 	}
@@ -268,7 +253,6 @@ func recoverPanic(w http.ResponseWriter) {
 // --- HTTP Handlers ---
 func entriesHandler(w http.ResponseWriter, r *http.Request) {
 	defer recoverPanic(w)
-	// For PUT and DELETE, the ID is in the URL path
 	id := strings.TrimPrefix(r.URL.Path, "/api/entries/")
 
 	switch r.Method {
@@ -402,13 +386,11 @@ func main() {
 		log.Fatalf("Failed to parse templates: %v", err)
 	}
 
-	// Initialize the entry store
 	entryStore, err = NewEntryStore(dbFile)
 	if err != nil {
 		log.Fatalf("Failed to initialize entry store: %v", err)
 	}
 
-	// --- Register HTTP Handlers ---
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
 		if r.Method == http.MethodGet {
@@ -436,7 +418,9 @@ func main() {
 			go func() {
 				err := util.ConnectPeerWithStop(peerAddr, infoHash, session.StopChan, session.Speed)
 				if err != nil {
-					log.Printf("Session %s connection error: %v", sessionID, err)
+					// This error occurs when the connection ends, e.g., after being stopped.
+					// It's not necessarily a critical failure.
+					log.Printf("Session %s connection ended: %v", sessionID, err)
 				}
 			}()
 			log.Printf("Started session: %s", sessionID)
@@ -454,6 +438,7 @@ func main() {
 				log.Printf("Stopped session: %s", sessionID)
 				w.Write([]byte("Stopped"))
 			} else {
+				log.Printf("Attempted to stop a non-existent session: %s", sessionID)
 				w.Write([]byte("No active session found"))
 			}
 		} else {
@@ -485,9 +470,9 @@ func main() {
 
 	http.HandleFunc("/reannounce", handleReannounce)
 
-	// API handler for entries
 	http.HandleFunc("/api/entries/", entriesHandler)
 
 	log.Printf("Starting server on port: %s...", port)
 	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
+
