@@ -20,15 +20,12 @@ import (
 	"fake_dowloader/util"
 )
 
-// --- 嵌入资源 ---
-//
 //go:embed templates/*
 var templateFS embed.FS
 
 //go:embed py/force_reannounce.py
 var pythonScript []byte
 
-// --- 全局变量 ---
 var (
 	templates *template.Template
 	devMode   bool
@@ -37,10 +34,31 @@ var (
 // --- Session Management ---
 // Session represents a user's connection session.
 type Session struct {
-	ID       string
-	StopChan chan struct{}
-	Speed    *int64
-	// BUGFIX: Removed CreatedAt field as sessions are now permanent until explicitly stopped.
+	ID        string
+	StopChan  chan struct{}
+	Speed     *int64
+	IsRunning bool
+	PeerAddr  string // Store peer address for status recovery
+	InfoHash  string // Store info hash for status recovery
+	mutex     sync.RWMutex
+}
+
+// SetRunning sets the running state of the session.
+func (s *Session) SetRunning(running bool, peerAddr, infoHash string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.IsRunning = running
+	if running {
+		s.PeerAddr = peerAddr
+		s.InfoHash = infoHash
+	}
+}
+
+// GetStatus gets the current status of the session.
+func (s *Session) GetStatus() (bool, string, string) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.IsRunning, s.PeerAddr, s.InfoHash
 }
 
 // SessionManager manages active sessions.
@@ -51,30 +69,20 @@ type SessionManager struct {
 
 // NewSessionManager creates a new session manager.
 func NewSessionManager() *SessionManager {
-	sm := &SessionManager{
+	return &SessionManager{
 		sessions: make(map[string]*Session),
 	}
-	// BUGFIX: Removed the call to the session cleanup goroutine.
-	// Sessions will no longer expire automatically.
-	return sm
 }
 
-// CreateSession creates and stores a new session.
-func (sm *SessionManager) CreateSession(sessionID string) *Session {
+// GetOrCreateSession retrieves a session by ID, or creates it if it doesn't exist.
+func (sm *SessionManager) GetOrCreateSession(sessionID string) *Session {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	// If a session for this ID already exists, stop the old one before creating a new one.
-	if existingSession, exists := sm.sessions[sessionID]; exists {
-		if existingSession.StopChan != nil {
-			// Prevent closing a channel that might already be closed.
-			select {
-			case <-existingSession.StopChan:
-				// Already closed
-			default:
-				close(existingSession.StopChan)
-			}
-		}
+
+	if session, exists := sm.sessions[sessionID]; exists {
+		return session
 	}
+
 	session := &Session{
 		ID:       sessionID,
 		StopChan: make(chan struct{}),
@@ -84,53 +92,44 @@ func (sm *SessionManager) CreateSession(sessionID string) *Session {
 	return session
 }
 
-// GetSession retrieves a session by ID.
-func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
-	sm.mutex.RLock()
-	defer sm.mutex.RUnlock()
-	session, exists := sm.sessions[sessionID]
-	return session, exists
-}
-
-// StopSession stops a running session. This is now the ONLY way a session is removed.
+// StopSession stops a running session and resets its state.
 func (sm *SessionManager) StopSession(sessionID string) bool {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
+
 	session, exists := sm.sessions[sessionID]
-	if !exists {
-		return false
+	if !exists || !session.IsRunning {
+		return false // Session doesn't exist or is not running
 	}
-	if session.StopChan != nil {
-		select {
-		case <-session.StopChan:
-			// Already closed
-		default:
-			close(session.StopChan)
-		}
-	}
-	delete(sm.sessions, sessionID)
+
+	// Close the stop channel to signal the download goroutine to stop
+	close(session.StopChan)
+
+	// Reset session state
+	session.IsRunning = false
+	atomic.StoreInt64(session.Speed, 0)
+
+	// Create a new stop channel for the next start
+	session.StopChan = make(chan struct{})
+
+	log.Printf("Session %s download task stopped.", sessionID)
 	return true
 }
 
-// BUGFIX: The entire cleanupExpiredSessions function has been removed to ensure sessions are permanent.
-
 // --- Entry Management for Saved Data ---
-// SavedEntry represents a saved entry in our JSON database.
+// (EntryStore and SavedEntry structs remain unchanged)
 type SavedEntry struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	PeerAddr string `json:"peerAddr"`
 	InfoHash string `json:"infoHash"`
 }
-
-// EntryStore manages the collection of saved entries.
 type EntryStore struct {
 	mu      sync.RWMutex
 	entries map[string]SavedEntry
 	file    string
 }
 
-// NewEntryStore creates and loads an entry store from a file.
 func NewEntryStore(file string) (*EntryStore, error) {
 	store := &EntryStore{
 		entries: make(map[string]SavedEntry),
@@ -146,8 +145,6 @@ func NewEntryStore(file string) (*EntryStore, error) {
 	}
 	return store, nil
 }
-
-// load reads the database file into memory.
 func (s *EntryStore) load() error {
 	data, err := os.ReadFile(s.file)
 	if err != nil {
@@ -158,8 +155,6 @@ func (s *EntryStore) load() error {
 	}
 	return json.Unmarshal(data, &s.entries)
 }
-
-// save writes the current entries from memory to the database file.
 func (s *EntryStore) save() error {
 	data, err := json.MarshalIndent(s.entries, "", "  ")
 	if err != nil {
@@ -167,8 +162,6 @@ func (s *EntryStore) save() error {
 	}
 	return os.WriteFile(s.file, data, 0644)
 }
-
-// GetAll returns a slice of all saved entries.
 func (s *EntryStore) GetAll() []SavedEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -178,56 +171,44 @@ func (s *EntryStore) GetAll() []SavedEntry {
 	}
 	return entries
 }
-
-// Add creates a new entry and saves it.
 func (s *EntryStore) Add(entry SavedEntry) (SavedEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return SavedEntry{}, err
 	}
 	entry.ID = hex.EncodeToString(b)
 	s.entries[entry.ID] = entry
-
 	if err := s.save(); err != nil {
 		delete(s.entries, entry.ID)
 		return SavedEntry{}, err
 	}
 	return entry, nil
 }
-
-// Update modifies an existing entry.
 func (s *EntryStore) Update(id string, updatedEntry SavedEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	originalEntry, exists := s.entries[id]
 	if !exists {
 		return fmt.Errorf("entry with ID %s not found", id)
 	}
 	updatedEntry.ID = id
 	s.entries[id] = updatedEntry
-
 	if err := s.save(); err != nil {
 		s.entries[id] = originalEntry
 		return err
 	}
 	return nil
 }
-
-// Delete removes an entry.
 func (s *EntryStore) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	originalEntry, exists := s.entries[id]
 	if !exists {
 		return fmt.Errorf("entry with ID %s not found", id)
 	}
 	delete(s.entries, id)
-
 	if err := s.save(); err != nil {
 		s.entries[id] = originalEntry
 		return err
@@ -240,10 +221,6 @@ var sessionManager = NewSessionManager()
 var entryStore *EntryStore
 
 // --- Utility Functions ---
-func getSessionID(r *http.Request) string {
-	return r.RemoteAddr + "_" + r.UserAgent()
-}
-
 func recoverPanic(w http.ResponseWriter) {
 	if r := recover(); r != nil {
 		log.Println("Recovered from panic:", r)
@@ -255,13 +232,11 @@ func recoverPanic(w http.ResponseWriter) {
 func entriesHandler(w http.ResponseWriter, r *http.Request) {
 	defer recoverPanic(w)
 	id := strings.TrimPrefix(r.URL.Path, "/api/entries/")
-
 	switch r.Method {
 	case http.MethodGet:
 		entries := entryStore.GetAll()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(entries)
-
 	case http.MethodPost:
 		var entry SavedEntry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
@@ -276,7 +251,6 @@ func entriesHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(newEntry)
-
 	case http.MethodPut:
 		if id == "" {
 			http.Error(w, "Missing entry ID", http.StatusBadRequest)
@@ -293,7 +267,6 @@ func entriesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "Entry updated")
-
 	case http.MethodDelete:
 		if id == "" {
 			http.Error(w, "Missing entry ID", http.StatusBadRequest)
@@ -305,7 +278,6 @@ func entriesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "Entry deleted")
-
 	default:
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 	}
@@ -313,12 +285,10 @@ func entriesHandler(w http.ResponseWriter, r *http.Request) {
 
 func handleReannounce(w http.ResponseWriter, r *http.Request) {
 	defer recoverPanic(w)
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var cmd *exec.Cmd
 	if devMode {
 		log.Println("Dev mode: running script from filesystem.")
@@ -337,7 +307,6 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer os.Remove(tmpfile.Name())
-
 		if _, err := tmpfile.Write(pythonScript); err != nil {
 			http.Error(w, "Failed to write script to temporary file: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -349,7 +318,6 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 		os.Chmod(tmpfile.Name(), 0700)
 		cmd = exec.Command("python3", tmpfile.Name())
 	}
-
 	log.Println("Executing command:", cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -357,14 +325,13 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Command failed: "+err.Error()+"\nOutput: "+string(output), http.StatusInternalServerError)
 		return
 	}
-
 	log.Println("Script output:\n", string(output))
 	w.Write([]byte("Re-announce completed with output:\n" + string(output)))
 }
 
 // --- Main Function ---
 func main() {
-	fmt.Println("fake_downloader version: 0.2.0")
+	fmt.Println("fake_downloader version: 0.3.1 (Stateful Sessions)")
 	var port string
 	var defaultPeerAddr string
 	var dbFile string
@@ -383,7 +350,6 @@ func main() {
 		log.Println("Running in PRODUCTION mode. Loading templates from embedded assets.")
 		templates, err = template.ParseFS(templateFS, "templates/index.html")
 	}
-
 	if err != nil {
 		log.Fatalf("Failed to parse templates: %v", err)
 	}
@@ -395,83 +361,116 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
-		if r.Method == http.MethodGet {
-			data := struct {
-				DefaultPeerAddr string
-				Entries         []SavedEntry
-			}{
-				DefaultPeerAddr: defaultPeerAddr,
-				Entries:         entryStore.GetAll(),
-			}
-			err := templates.Execute(w, data)
-			if err != nil {
-				http.Error(w, "Failed to render template", http.StatusInternalServerError)
-			}
+		data := struct {
+			DefaultPeerAddr string
+			Entries         []SavedEntry
+		}{
+			DefaultPeerAddr: defaultPeerAddr,
+			Entries:         entryStore.GetAll(),
+		}
+		err := templates.Execute(w, data)
+		if err != nil {
+			http.Error(w, "Failed to render template", http.StatusInternalServerError)
 		}
 	})
 
 	http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
-		if r.Method == http.MethodPost {
-			sessionID := getSessionID(r)
-			peerAddr := r.FormValue("peerAddr")
-			infoHash := r.FormValue("infoHash")
-			session := sessionManager.CreateSession(sessionID)
-			go func() {
-				err := util.ConnectPeerWithStop(peerAddr, infoHash, session.StopChan, session.Speed)
-				if err != nil {
-					// This error occurs when the connection ends, e.g., after being stopped.
-					// It's not necessarily a critical failure.
-					log.Printf("Session %s connection ended: %v", sessionID, err)
-				}
-			}()
-			log.Printf("Started session: %s", sessionID)
-			w.Write([]byte("Started"))
-		} else {
+		if r.Method != http.MethodPost {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
 		}
+
+		sessionID := r.Header.Get("X-Session-ID")
+		if sessionID == "" {
+			http.Error(w, "Missing X-Session-ID header", http.StatusBadRequest)
+			return
+		}
+
+		peerAddr := r.FormValue("peerAddr")
+		infoHash := r.FormValue("infoHash")
+		session := sessionManager.GetOrCreateSession(sessionID)
+
+		if isRunning, _, _ := session.GetStatus(); isRunning {
+			http.Error(w, "Session is already running", http.StatusConflict)
+			return
+		}
+
+		session.SetRunning(true, peerAddr, infoHash)
+		go func() {
+			log.Printf("Starting download for session %s, peer %s", sessionID, peerAddr)
+			err := util.ConnectPeerWithStop(peerAddr, infoHash, session.StopChan, session.Speed)
+			if err != nil {
+				log.Printf("Session %s connection ended: %v", sessionID, err)
+			}
+			// When the download ends (either by stop or error), update the state.
+			session.SetRunning(false, "", "")
+			atomic.StoreInt64(session.Speed, 0)
+		}()
+		log.Printf("Started session: %s", sessionID)
+		w.Write([]byte("Started"))
 	})
 
 	http.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
-		if r.Method == http.MethodPost {
-			sessionID := getSessionID(r)
-			if sessionManager.StopSession(sessionID) {
-				log.Printf("Stopped session: %s", sessionID)
-				w.Write([]byte("Stopped"))
-			} else {
-				log.Printf("Attempted to stop a non-existent session: %s", sessionID)
-				w.Write([]byte("No active session found"))
-			}
-		} else {
+		if r.Method != http.MethodPost {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
+		}
+
+		sessionID := r.Header.Get("X-Session-ID")
+		if sessionID == "" {
+			http.Error(w, "Missing X-Session-ID header", http.StatusBadRequest)
+			return
+		}
+
+		if sessionManager.StopSession(sessionID) {
+			log.Printf("Stopped session: %s", sessionID)
+			w.Write([]byte("Stopped"))
+		} else {
+			log.Printf("Attempted to stop a non-existent or already stopped session: %s", sessionID)
+			w.Write([]byte("No active session found to stop"))
 		}
 	})
 
 	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
 		defer recoverPanic(w)
-		if r.Method == http.MethodGet {
-			sessionID := getSessionID(r)
-			session, exists := sessionManager.GetSession(sessionID)
-			var speed int64 = 0
-			if exists {
-				speed = atomic.LoadInt64(session.Speed)
-			}
-			response := map[string]int64{"speed": speed}
-			jsonResponse, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, "Failed to create JSON response", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(jsonResponse)
-		} else {
-			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		sessionID := r.Header.Get("X-Session-ID")
+		if sessionID == "" {
+			http.Error(w, "Missing X-Session-ID header", http.StatusBadRequest)
+			return
 		}
+
+		session := sessionManager.GetOrCreateSession(sessionID)
+		speed := atomic.LoadInt64(session.Speed)
+
+		response := map[string]interface{}{"speed": speed}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// NEW: /status endpoint
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		defer recoverPanic(w)
+		sessionID := r.Header.Get("X-Session-ID")
+		if sessionID == "" {
+			http.Error(w, "Missing X-Session-ID header", http.StatusBadRequest)
+			return
+		}
+
+		session := sessionManager.GetOrCreateSession(sessionID)
+		isRunning, peerAddr, infoHash := session.GetStatus()
+
+		response := map[string]interface{}{
+			"isRunning": isRunning,
+			"peerAddr":  peerAddr,
+			"infoHash":  infoHash,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 	})
 
 	http.HandleFunc("/reannounce", handleReannounce)
-
 	http.HandleFunc("/api/entries/", entriesHandler)
 
 	log.Printf("Starting server on port: %s...", port)

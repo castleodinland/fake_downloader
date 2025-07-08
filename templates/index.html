@@ -168,7 +168,7 @@
 <body>
 
     <div class="main-content">
-        <h1>Fake Downloader For PT</h1>
+        <h1>Fake Downloader For PT (Stateful)</h1>
         <div class="container">
             <h2>Controls</h2>
             <div class="input-group">
@@ -185,6 +185,7 @@
             <div class="statsDisplay">
                 <div id="speedDisplay">Speed: 0 MB/s</div>
                 <div id="totalDataDisplay">Total Data: 0 GB</div>
+                <div id="elapsedTimeLabel" style="margin-left:12px;">Time: 00:00:00</div>
             </div>
         </div>
 
@@ -214,7 +215,7 @@
                     {{range .Entries}}
                     <tr id="entry-{{.ID}}">
                         <td data-field="name" title="{{.Name}}">{{.Name}}</td>
-                        <td data--field="peerAddr" title="{{.PeerAddr}}">{{.PeerAddr}}</td>
+                        <td data-field="peerAddr" title="{{.PeerAddr}}">{{.PeerAddr}}</td>
                         <td data-field="infoHash" title="{{.InfoHash}}">{{.InfoHash}}</td>
                         <td class="actions">
                             <button class="action-button action-button-load" onclick="loadEntryToInputs('{{.PeerAddr}}', '{{.InfoHash}}')">Load</button>
@@ -243,6 +244,29 @@
     let intervalId;
     let chart;
     let totalData = 0;
+    let startTime = null;
+    let elapsedIntervalId = null;
+    let sessionId = null; // NEW: Session ID variable
+
+    // --- Session Management ---
+    // Generates a v4 UUID.
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    // Gets session ID from localStorage or generates a new one.
+    function getSessionId() {
+        let sid = localStorage.getItem('downloaderSessionId');
+        if (!sid) {
+            sid = generateUUID();
+            localStorage.setItem('downloaderSessionId', sid);
+        }
+        sessionId = sid;
+        console.log("Using Session ID:", sessionId);
+    }
 
     // --- Sidebar ---
     function toggleSidebar() {
@@ -309,28 +333,41 @@
         }
         fetch('/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Session-ID': sessionId // Add session ID to header
+            },
             body: `peerAddr=${encodeURIComponent(peerAddr)}&infoHash=${encodeURIComponent(infoHash)}`
-        }).then(response => { if (!response.ok) throw new Error("Failed to start"); return response.text(); })
+        }).then(response => { 
+            if (!response.ok) {
+                 if(response.status === 409) throw new Error("Session is already running on the server.");
+                 throw new Error("Failed to start. Status: " + response.status);
+            }
+            return response.text(); 
+        })
         .then(data => {
             console.log(data);
             toggleButtons(false);
             startMonitoring();
-            localStorage.setItem('isStarted', 'true');
-            localStorage.setItem('peerAddr', peerAddr);
-            localStorage.setItem('infoHash', infoHash);
+            startElapsedTimer();
             totalData = 0;
             updateTotalDataDisplay();
-        }).catch(err => console.error(err));
+        }).catch(err => {
+            console.error(err);
+            showModal({ title: "Start Error", message: err.message, buttons: [{ label: "OK" }] });
+        });
     }
     function stop() {
-        fetch('/stop', { method: 'POST' })
+        fetch('/stop', { 
+            method: 'POST',
+            headers: { 'X-Session-ID': sessionId } // Add session ID to header
+        })
             .then(response => response.text())
             .then(data => {
                 console.log(data);
                 toggleButtons(true);
                 stopMonitoring();
-                localStorage.setItem('isStarted', 'false');
+                stopElapsedTimer();
                 if (chart) {
                     chart.data.datasets[0].data = [];
                     chart.data.labels = [];
@@ -341,7 +378,10 @@
     function reannounce() {
         const button = document.getElementById("reannounceButton");
         button.disabled = true;
-        fetch('/reannounce', { method: 'POST' })
+        fetch('/reannounce', { 
+            method: 'POST',
+            headers: { 'X-Session-ID': sessionId } // Add session ID to header
+        })
             .then(response => response.text())
             .then(data => {
                 console.log(data);
@@ -355,23 +395,33 @@
     function startMonitoring() { stopMonitoring(); intervalId = setInterval(fetchSpeed, 1000); }
     function stopMonitoring() { clearInterval(intervalId); }
     function fetchSpeed() { 
-        fetch('/speed')
-            .then(response => response.json())
+        fetch('/speed', {
+            headers: { 'X-Session-ID': sessionId } // Add session ID to header
+        })
+            .then(response => {
+                if (!response.ok) throw new Error("Failed to fetch speed, session might have ended.");
+                return response.json();
+            })
             .then(data => {
                 const speedInMBps = (data.speed / 1024).toFixed(2);
                 document.getElementById("speedDisplay").innerText = `Speed: ${speedInMBps} MB/s`;
                 updateChart(speedInMBps);
                 updateTotalData(speedInMBps);
-            }).catch(() => { stop(); document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s"; });
+            }).catch((err) => { 
+                console.error(err.message);
+                stop(); // Stop everything on the frontend if speed check fails
+                document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s"; 
+            });
     }
     
-    // BUGFIX: Removed the line that shifts data out of the chart array.
     function updateChart(speed) { 
         if (!chart) return;
         const data = chart.data.datasets[0].data;
         const labels = chart.data.labels;
-        // The line "if(labels.length > 120) { labels.shift(); data.shift(); }" was removed
-        // to permanently keep all data points.
+        if(labels.length > 120) { // Keep chart from growing indefinitely
+             labels.shift(); 
+             data.shift(); 
+        }
         labels.push(''); 
         data.push(speed); 
         chart.update();
@@ -380,7 +430,28 @@
     function updateTotalData(speedInMBps) { totalData += parseFloat(speedInMBps); updateTotalDataDisplay(); }
     function updateTotalDataDisplay() { const totalDataGB = (totalData / 1024).toFixed(3); document.getElementById("totalDataDisplay").innerText = `Total Data: ${totalDataGB} GB`; }
 
-    // --- Saved Entries CRUD Handlers (Using Modals) ---
+    // --- 累计时间显示 ---
+    function startElapsedTimer() {
+        if (elapsedIntervalId) clearInterval(elapsedIntervalId);
+        startTime = Date.now();
+        updateElapsedTime();
+        elapsedIntervalId = setInterval(updateElapsedTime, 1000);
+    }
+    function stopElapsedTimer() {
+        if (elapsedIntervalId) clearInterval(elapsedIntervalId);
+        document.getElementById("elapsedTimeLabel").innerText = "Time: 00:00:00";
+    }
+    function updateElapsedTime() {
+        if (!startTime) return;
+        const now = Date.now();
+        let elapsed = Math.floor((now - startTime) / 1000);
+        const hours = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+        const seconds = String(elapsed % 60).padStart(2, '0');
+        document.getElementById("elapsedTimeLabel").innerText = `Time: ${hours}:${minutes}:${seconds}`;
+    }
+
+    // --- Saved Entries CRUD Handlers (Unchanged, but now use session ID implicitly via fetch) ---
     function loadEntryToInputs(peerAddr, infoHash) {
         document.getElementById("peerAddr").value = peerAddr;
         document.getElementById("infoHash").value = infoHash;
@@ -415,7 +486,7 @@
         try {
             const response = await fetch('/api/entries/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-Session-ID': sessionId },
                 body: JSON.stringify({ name, peerAddr, infoHash })
             });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
@@ -444,7 +515,7 @@
     
     async function deleteEntry(id) {
         try {
-            const response = await fetch(`/api/entries/${id}`, { method: 'DELETE' });
+            const response = await fetch(`/api/entries/${id}`, { method: 'DELETE', headers: { 'X-Session-ID': sessionId } });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
             document.getElementById(`entry-${id}`).remove();
         } catch (error) {
@@ -453,7 +524,6 @@
         }
     }
 
-    // --- Edit/Update functions ---
     function enterEditMode(id) { 
         const row = document.getElementById(`entry-${id}`);
         if (row.classList.contains('editing')) return;
@@ -496,7 +566,7 @@
         try {
             const response = await fetch(`/api/entries/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-Session-ID': sessionId },
                 body: JSON.stringify(entryData)
             });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
@@ -533,15 +603,36 @@
         `;
     }
 
+    // NEW: Check server for existing session status on page load.
+    async function checkServerStatus() {
+        try {
+            const response = await fetch('/status', {
+                headers: { 'X-Session-ID': sessionId }
+            });
+            if (!response.ok) throw new Error("Server status check failed.");
+            const status = await response.json();
+
+            if (status.isRunning) {
+                console.log("Reconnecting to an active session on the server.");
+                document.getElementById("peerAddr").value = status.peerAddr;
+                document.getElementById("infoHash").value = status.infoHash;
+                toggleButtons(false); // Disable start, enable stop
+                startMonitoring();
+                startElapsedTimer(); // You might want to get elapsed time from server in a future update
+            } else {
+                console.log("No active session on server. Ready to start.");
+                toggleButtons(true); // Enable start, disable stop
+            }
+        } catch (error) {
+            console.error("Error checking server status:", error);
+            toggleButtons(true); // Default to startable state on error
+        }
+    }
+
     // --- Window Load Initialization ---
     window.onload = function() {
-        const isStarted = localStorage.getItem('isStarted') === 'true';
-        toggleButtons(!isStarted);
-        if (isStarted) {
-            document.getElementById("peerAddr").value = localStorage.getItem('peerAddr') || '{{.DefaultPeerAddr}}';
-            document.getElementById("infoHash").value = localStorage.getItem('infoHash') || '';
-            startMonitoring();
-        }
+        getSessionId(); // First, get or create our persistent session ID.
+
         const ctx = document.getElementById('myChart').getContext('2d');
         chart = new Chart(ctx, {
             type: 'line',
@@ -560,6 +651,8 @@
         document.getElementById('sidebar-overlay').addEventListener('click', () => {
             toggleSidebar();
         });
+
+        checkServerStatus(); // Then, check the server for the state of our session.
     }
 </script>
 
