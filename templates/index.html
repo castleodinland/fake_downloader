@@ -213,7 +213,7 @@
                     {{range .Entries}}
                     <tr id="entry-{{.ID}}">
                         <td data-field="name" title="{{.Name}}">{{.Name}}</td>
-                        <td data-field="peerAddr" title="{{.PeerAddr}}">{{.PeerAddr}}</td>
+                        <td data--field="peerAddr" title="{{.PeerAddr}}">{{.PeerAddr}}</td>
                         <td data-field="infoHash" title="{{.InfoHash}}">{{.InfoHash}}</td>
                         <td class="actions">
                             <button class="action-button action-button-load" onclick="loadEntryToInputs('{{.PeerAddr}}', '{{.InfoHash}}')">Load</button>
@@ -363,13 +363,19 @@
                 updateTotalData(speedInMBps);
             }).catch(() => { stop(); document.getElementById("speedDisplay").innerText = "Speed: 0 MB/s"; });
     }
+    
+    // BUGFIX: Removed the line that shifts data out of the chart array.
     function updateChart(speed) { 
         if (!chart) return;
         const data = chart.data.datasets[0].data;
         const labels = chart.data.labels;
-        if(labels.length > 120) { labels.shift(); data.shift(); }
-        labels.push(''); data.push(speed); chart.update();
+        // The line "if(labels.length > 120) { labels.shift(); data.shift(); }" was removed
+        // to permanently keep all data points.
+        labels.push(''); 
+        data.push(speed); 
+        chart.update();
     }
+
     function updateTotalData(speedInMBps) { totalData += parseFloat(speedInMBps); updateTotalDataDisplay(); }
     function updateTotalDataDisplay() { const totalDataGB = (totalData / 1024).toFixed(3); document.getElementById("totalDataDisplay").innerText = `Total Data: ${totalDataGB} GB`; }
 
