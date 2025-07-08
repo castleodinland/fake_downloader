@@ -21,6 +21,7 @@ import (
 )
 
 // --- 嵌入资源 ---
+//
 //go:embed templates/*
 var templateFS embed.FS
 
@@ -363,6 +364,7 @@ func handleReannounce(w http.ResponseWriter, r *http.Request) {
 
 // --- Main Function ---
 func main() {
+	fmt.Println("fake_downloader version: 0.2.0")
 	var port string
 	var defaultPeerAddr string
 	var dbFile string
@@ -475,4 +477,3 @@ func main() {
 	log.Printf("Starting server on port: %s...", port)
 	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
-
